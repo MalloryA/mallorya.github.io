@@ -1,0 +1,80 @@
+<?xml version="1.0"?>
+<main>
+	<title>HOWTO: Write a Disk Image to USB Media on FreeBSD</title>
+	<body>
+<article>
+
+  <header>
+    <h1>HOWTO: Write a Disk Image to USB Media on FreeBSD</h1>
+    <p><time datetime="2021-05-11T16:30:07+00:00">May 11, 2021</time></p>
+  </header>
+
+  <p>This HOWTO will describe the process of writing a disk image to USB media using only tools available in all FreeBSD installations. I wrote this using FreeBSD 13.0 but the command line tools and options should work on older versions.</p>
+
+  <p>A disk image will usually end with <code>.img</code> or <code>.iso</code>. A <code>.iso</code> can usually either be written to USB media or to a CD/DVD.</p>
+
+  <p>This document will assume the reader has a very basic understanding of the command line.</p>
+
+  <h1 id="steps">Steps</h1>
+
+<ol>
+  <li>Insert the USB drive into the USB port. If using other media, insert the media into the reader/writer and insert that into the USB port.</li>
+  <li>
+    <p>Open a terminal and run <code>geom disk list</code> to view all attached disks. You should be able to identify it by the size of the disk (“mediasize”) and the manufacturer’s name (“descr”).</p>
+
+    <p>Sample output of <code>geom disk list</code>:</p>
+
+    <pre><code>Geom name: da0
+Providers:
+1. Name: da0
+   Mediasize: 8166703104 (7.6G)
+   Sectorsize: 512
+   Mode: r0w0e0
+   descr: Verbatim micro USB
+   ident: 11122488000854
+   rotationrate: unknown
+   fwsectors: 63
+   fwheads: 255
+</code></pre>
+
+    <p>The name is what we need. Here that’s <code>da0</code>, but for the remainder of this document I’ll refer to it as <code>XXX</code> to prevent copy/paste accidents.</p>
+  </li>
+  <li>Run <code>su</code> to switch to root.</li>
+  <li>
+    <p>Run the following command.</p>
+
+    <div class="warning">
+  <h2>⚠️ WARNING ⚠️</h2>
+
+  This command is destructive. The disk’s data will be entirely overwritten and it will be impossible to retrieve. Only proceed if you’re sure you’re using the correct disk.
+</div>
+
+    <pre><code>cat myfile.img /dev/zero | dd of=/dev/XXX bs=1M
+</code></pre>
+
+    <p>This command will write <code>myfile.img</code> to the <code>XXX</code> disk, and then continue to write zeros to the disk until the disk is full.</p>
+  </li>
+</ol>
+
+<h1 id="notes">Notes</h1>
+
+<p>It’s important to write zeros to the remainder of the disk as sometimes old data can be interpreted as part of the disk image.</p>
+
+<p>The <code>bs=1M</code> flag is necessary because writing a disk byte-by-byte is extremely slow. Writing a disk in 1 mebibyte blocks (1MiB = 1 mebibyte = 1024² bytes) will be significantly faster in most cases. The ideal block size flag to pass will differ depending on the hardware used, but <code>1M</code> will work well enough. (<a href="https://serverfault.com/questions/650086/does-the-bs-option-in-dd-really-improve-the-speed">More about the <code>bs</code> flag</a>)</p>
+
+<style>
+article .warning {
+  background: #ff0;
+  color: #000;
+  padding: 10px 15px 15px;
+  margin-bottom: 15px;
+}
+article .warning h2 {
+  font-size: 22px;
+  margin-bottom: 5px;
+}
+</style>
+
+</article>
+	</body>
+</main>
