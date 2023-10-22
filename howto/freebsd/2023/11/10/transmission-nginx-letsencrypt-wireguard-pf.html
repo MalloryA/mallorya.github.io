@@ -1,0 +1,205 @@
+<!doctype html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HOWTO: Install Transmission on FreeBSD 14.0</title>
+<link rel="stylesheet" href="/style.css">
+<script type="module" src="/main.js"></script>
+</head>
+<body>
+<h1><a href="/">Mallory's blog</a></h1>
+<article>
+
+  <header>
+    <h1>HOWTO: Install Transmission on FreeBSD 14.0</h1>
+    <p><time datetime="2023-11-10">November 10, 2023</time></p>
+  </header>
+
+	<p>In this HOWTO we'll install Transmission on a Raspberry Pi. We'll run Transmission behind nginx which will have a TLS certificate provided by certbot/Let's Encrypt. Transmission will communicate with the internet through a WireGuard VPN, and Transmission will not be allowed to leak when the VPN goes down thanks to PF. In order to grant a TLS certificate to the server we'll need a domain name and the host will need an IPv6 <abbr title="Globally Unique Address">GUA</abbr>.</p>
+
+	<h2>Setting up the Raspberry Pi</h2>
+
+	<ul>
+		<li>Set up a domain or subdomain to point at your Raspberry Pi's globally routable IPv6 address (we'll use <code data-nocopy="true"><em>example.invalid</em></code> in this HOWTO)</li>
+		<li>Set up your router's firewall to pass in TCP packets on port 80 bound for your Raspberry Pi's IPv6 address (port 80 will only be used to redirect to HTTPS and to renew certificates, so it will be safe to leave open)</li>
+		<li>Burn FreeBSD 14.0 to MicroSD card, insert into the Raspberry Pi, attach ethernet and power (<a href="/howto/freebsd/2021/05/11/howto-img-freebsd.html">guide to burning media on FreeBSD</a>)</li>
+		<li>
+<code>ssh-copy-id freebsd@<em>example.invalid</em></code> (the password is <code>freebsd</code>)</li>
+		<li><code>scp <em>my-wireguard-config.conf</em> freebsd@<em>example.invalid</em></code></li>
+		<li>
+			<code>ssh freebsd@<em>example.invalid</em></code>
+			<ul>
+				<li>
+<code>passwd</code> (change your password to something other than <code data-nocopy="true">freebsd</code>)</li>
+				<li>
+<code>su</code> (the password is <code>root</code>)</li>
+				<li><code>mkdir -p /usr/local/etc</code></li>
+				<li><code>echo permit nopass :wheel &gt; /usr/local/etc/doas.conf</code></li>
+				<li><code>pkg install -y doas</code></li>
+			</ul>
+		</li>
+	</ul>
+
+	<h2>Basic setup</h2>
+
+	<p>From now, all commands will assume you're logged into the Pi as user <code data-nocopy="true">freebsd</code>.</p>
+
+	<ul>
+		<li><code>doas pkg install -y ca_root_nss</code></li>
+		<li><code>doas sysrc hostname=<em>hostname</em></code></li>
+		<li><code>doas sysrc ntpd_enable=YES ntpd_sync_on_start=YES</code></li>
+		<li><code>echo 'name_servers="2620:fe::fe 9.9.9.10"' | doas tee /etc/resolvconf.conf</code></li>
+		<li><code>echo UseDNS no | doas tee -a /etc/ssh/sshd_config</code></li>
+		<li><code>doas mkdir -p /store/www /store/downloads</code></li>
+		<li><code>ln -s /store/downloads</code></li>
+	</ul>
+
+	<h2>Set up nginx &amp; Let's Encrypt</h2>
+
+	<ul>
+		<li><code>doas pkg install -y nginx py39-certbot-nginx</code></li>
+		<li><code>doas sysrc nginx_enable=YES</code></li>
+		<li><code>doas sysrc -f /etc/periodic.conf weekly_certbot_enable=YES</code></li>
+		<li><pre>cat &lt;&lt;EOF | doas tee /store/www/index.html
+&lt;title&gt;<em>example.invalid</em>&lt;/title&gt;
+&lt;link rel="icon" href="/transmission/web/images/favicon.png"&gt;
+&lt;h1&gt;<em>example.invalid</em>&lt;/h1&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href="/transmission/web/"&gt;Transmission&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href="/downloads/"&gt;Downloads&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+EOF</pre></li>
+
+		<li><pre>cat &lt;&lt;EOF | doas tee /usr/local/etc/nginx/nginx.conf
+worker_processes  1;
+events {
+  worker_connections  1024;
+}
+http {
+  include mime.types;
+  default_type application/octet-stream;
+  sendfile on;
+  keepalive_timeout 65;
+  gzip on;
+  server {
+    listen [::]:80;
+    server_name <em>example.invalid</em>;
+    location / {
+      alias /store/www/;
+      index index.html;
+    }
+    location /downloads/ {
+      alias /store/downloads/;
+      autoindex on;
+      autoindex_exact_size off;
+    }
+    location /transmission/ {
+      proxy_pass http://127.0.0.1:9091;
+    }
+  }
+}
+EOF</pre></li>
+
+		<li>
+			<code>doas certbot --nginx -d <em>example.invalid</em> --email=<em>your-email@example.invalid</em> --agree-tos --no-eff-email</code>
+			<br>
+			You should see the following message:
+			<pre data-nocopy="true">Deploying certificate
+Successfully deployed certificate for <em>example.invalid</em> to /usr/local/etc/nginx/nginx.conf
+Congratulations! You have successfully enabled HTTPS on https://<em>example.invalid</em></pre>
+			If you don't you should stop to investigate.
+		</li>
+	</ul>
+
+	<h2>Set up Transmission</h2>
+
+	<ul>
+		<li><code>doas pkg install -y transmission-daemon</code></li>
+		<li><code>doas chown transmission:transmission /store/downloads</code></li>
+		<li><code>doas sysrc transmission_download_dir=/store/downloads transmission_enable=YES</code></li>
+	</ul>
+
+	<h2>Set up WireGuard</h2>
+
+	<ul>
+
+		<li><code>doas pkg install -y wireguard-tools</code></li>
+		<li><code>doas cp <em>my-wireguard-config.conf</em> /usr/local/etc/wireguard/wg0.conf</code></li>
+		<li><code>doas sysrc wireguard_interfaces=wg0 wireguard_enable=YES</code></li>
+		<li><code>doas service wireguard start</code></li>
+		<li>Test that your IP addresses have changed: <code>fetch --quiet --output=- http://ip6only.me/api/ &amp;&amp; fetch --quiet --output=- http://ip4only.me/api/</code>
+</li>
+	</ul>
+
+	<h2>Set up PF</h2>
+
+	<ul>
+		<li><pre>cat &lt;&lt;EOF | doas tee /etc/pf.conf
+set skip on lo0
+
+# Block all incoming connections from wg0
+block in on wg0
+
+# Prevent leaks from Transmission
+block user transmission
+pass on wg0 user transmission
+
+# But allow other users to do anything
+pass user != transmission
+EOF</pre></li>
+	</ul>
+
+	<p>Let's test that pf works correctly:</p>
+	<ul>
+		<li><code>doas service pf onestart</code></li>
+		<li>If pf prevents you interacting over ssh, reboot it by pulling out unplugging the power cable and plugging it back in again.</li>
+		<li><code>doas service wireguard stop</code></li>
+		<li><code>doas -u transmission fetch --quiet --output=- http://ip6only.me/api/ ; doas -u transmission fetch --quiet --output=- http://ip4only.me/api/</code></li>
+		<li>You should see <samp data-nocopy="true">Host does not resolve</samp> twice.</li>
+		<li><code>doas service wireguard start</code></li>
+		<li><code>doas -u transmission fetch --quiet --output=- http://ip6only.me/api/ ; doas -u transmission fetch --quiet --output=- http://ip4only.me/api/</code></li>
+		<li>You should see the VPN's IP addresses.</li>
+	</ul>
+
+	<p>Once you're satisfied that it's working correctly (and you've verified that you're not being blocked from sshing in), we can enable pf on boot:</p>
+	<ul>
+		<li><code>doas sysrc pf_enable=YES</code></li>
+	</ul>
+
+	<h2>Login info &amp; shell scripts</h2>
+
+	<ul>
+		<li><code>echo 'Welcome to <em>hostname</em>!' | doas tee /etc/motd.template</code></li>
+		<li><code>echo uptime &gt; .login</code></li>
+		<li><pre>cat &lt;&lt;EOF | tee test.sh
+#!/bin/sh
+set -e
+
+whoami
+fetch --quiet --output=- http://ip6only.me/api/ | cut -d, -f2
+fetch --quiet --output=- http://ip4only.me/api/ | cut -d, -f2
+
+doas -u transmission whoami
+doas -u transmission fetch --quiet --output=- http://ip6only.me/api/ | cut -d, -f2
+doas -u transmission fetch --quiet --output=- http://ip4only.me/api/ | cut -d, -f2
+EOF</pre></li>
+
+		<li><code>chmod 755 test.sh</code></li>
+	</ul>
+
+	<h2>Reboot &amp; done</h2>
+
+	<ul>
+		<li><code>doas reboot</code></li>
+		<li>Visit <code>https://<em>example.invalid</em>/</code> to see your server with links to Transmission and the downloads directory.</li>
+	</ul>
+
+	<p>Now you're ready to download your favorite BSD without every other BitTorrent peer knowing your IP address!</p>
+
+	<img src="transmission-freebsd.png" alt="Transmission's web interface showing FreeBSD 13.2 seeding">
+
+</article>
+</body>
+</html>

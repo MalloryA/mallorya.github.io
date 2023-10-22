@@ -1,12 +1,70 @@
 body {
+	--global-bg: #02182B;
+	--code-bg: #50013D;
+	--global-text: #ddd;
+	--highlight: #F4D35E;
+
 	max-width: calc(800px - (30px * 2));
 	margin-right: auto;
 	margin-left: auto;
 	padding-right: 30px;
 	padding-left: 30px;
+
+	background: var(--global-bg);
+	color: var(--global-text);
+	font-family: sans-serif;
+	font-size: 20px;
+	line-height: 1.25em;
 }
 
-pre, code {
-	font-size:15px;
-	background-color:#eef
+a {
+	color: var(--global-text);
+}
+
+pre, code, kbd, samp {
+	font-size: 15px;
+	background-color: var(--code-bg);
+	border: 3px solid var(--code-bg);
+
+	& em {
+		font-style: inherit;
+		outline: 1px dashed var(--highlight);
+	}
+
+	& button.copy {
+		margin-left: 10px;
+		color: var(--global-bg);
+		background: var(--global-text);
+		border: 1px solid var(--global-text);
+		border-radius: 3px;
+
+		&:active {
+			color: var(--global-text);
+			background: var(--global-bg);
+		}
+	}
+}
+
+pre {
+	overflow: auto;
+}
+
+h1, h2, h3, h4, h5, h6 {
+	font-weight: normal;
+	line-height: 1.2em;
+}
+
+img {
+	max-width: 100%;
+}
+
+.warning {
+	background: var(--highlight);
+	color: var(--global-bg);
+	padding: 10px 15px 15px;
+	margin-bottom: 15px;
+	& h2 {
+		font-size: 22px;
+		margin-bottom: 5px;
+	}
 }

@@ -4,10 +4,12 @@
 		<html>
 			<head>
 				<meta charset="utf-8"/>
+				<meta name="viewport" content="width=device-width, initial-scale=1"/>
 				<title>
 					<xsl:copy-of select="title/node()"/>
 				</title>
 				<link rel="stylesheet" href="/style.css"/>
+				<script type="module" src="/main.js"/>
 			</head>
 			<body>
 				<h1><a href="/">Mallory's blog</a></h1>
